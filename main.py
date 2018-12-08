@@ -3,7 +3,7 @@ import argparse
 import json
 import os
 import time
-from keras.models import Model, load_model, Sequential
+from keras.models import Model, load_model, Sequential, model_from_yaml
 from keras.layers import Input, Dense, Embedding, Dropout, TimeDistributed, Bidirectional
 from keras.layers import LSTM, GRU
 from keras.optimizers import Adam
@@ -13,7 +13,8 @@ from scorer import scoring
 from utils import TestCallback, make_submission
 from keras.initializers import Constant
 from layernorm import LayerNormalization
-from tied_dense import TiedEmbeddingsTransposed
+from tied_dense import TiedEmbeddingsTransposed, DenseTranspose
+from keras import backend as K
 
 
 def build_model(embedding_dim, hidden_size, drop, sequence_length, vocabulary_size):
@@ -59,11 +60,12 @@ def build_model(embedding_dim, hidden_size, drop, sequence_length, vocabulary_si
 
     lstm_norm_4 = LayerNormalization()(lstm_out_4)    
 
+#     print(emb_layer.get_weights()[0])
     # add a TimeDistributed here, set units=hidden_size, dropout=drop, recurrent_dropout = drop, return_sequences=True
     # please read  https://keras.io/layers/wrappers/
     # output: outputs -> [batch_size, sequence_length, vocabulary_size]
-    outputs = TimeDistributed(Dense(units=vocabulary_size, activation='softmax'))(lstm_norm_4)
     #outputs = TimeDistributed(TiedEmbeddingsTransposed(tied_to=emb_layer, activation='softmax'))(lstm_norm_4)
+    outputs = TimeDistributed(Dense(units=vocabulary_size, activation='softmax'))(lstm_norm_4)
 
     # End of Model Architecture
     # ----------------------------------------#
@@ -119,10 +121,18 @@ def main(opt):
                             epochs=opt.epochs, verbose=1,
                             callbacks=[TestCallback((x_valid,y_valid), model=model)])
         model.save(opt.saved_model)
+        
+        # Save the model architecture
+        #with open('model_architecture.yaml', 'w') as f:
+        #    f.write(model.to_json())
+
         print("Training cost time: ", time.time() - st)
 
     else:
-        model = load_model(opt.saved_model, custom_objects={'LayerNormalization': LayerNormalization()})
+        # Model reconstruction from JSON file
+        #with open('model_architecture.yaml', 'r') as f:
+        #    model = model_from_yaml(f.read())
+        model = load_model(opt.saved_model, custom_objects={'LayerNormalization':LayerNormalization})
         vocabulary = json.load(open(os.path.join("data", "vocab.json")))
         predict_dict = predict_final_word(model, vocabulary, opt.input)
         sub_file = make_submission(predict_dict, opt.student_id, opt.input)
